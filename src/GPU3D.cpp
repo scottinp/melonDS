@@ -686,6 +686,11 @@ void GPU3D::UpdateClipMatrix() noexcept
 
     memcpy(ClipMatrix, ProjMatrix, 16*4);
     MatrixMult4x4(ClipMatrix, PosMatrix);
+
+    // st-hd-hud: squeeze clip-space X by 3/4 so a 16:9 view fits in 256px; pair with the 16:9 aspect setting.
+    // shortcut: always on, hard-coded 16:9; make it a toggle once the approach is proven.
+    for (int i = 0; i < 16; i += 4)
+        ClipMatrix[i] = (s32)(((s64)ClipMatrix[i] * 3) >> 2);
 }
 
 
