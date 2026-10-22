@@ -141,6 +141,8 @@ void main()
 
         if (uOAM[fSpriteIndex].Mosaic)
             flags.g = 1;
+        else if ((uOAM[fSpriteIndex].Type == 3) || (uOAM[fSpriteIndex].Type == 4))
+            flags.g = 2.0 / 255; // st-hd-hud: display-capture sprite, compositor skips the widescreen remap
 
         flags.a = float(uOAM[fSpriteIndex].BGPrio) / 255;
     }

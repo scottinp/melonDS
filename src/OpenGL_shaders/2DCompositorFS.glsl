@@ -242,9 +242,17 @@ void CalcSpriteMosaic(in ivec2 coord, out ivec4 objflags, out vec4 objcolor)
 
 vec4 CompositeLayers()
 {
-    ivec2 coord = ivec2(fTexcoord.zw);
-    vec2 bgcoord = vec2(fTexcoord.x, fract(fTexcoord.y));
-    int xpos = int(fTexcoord.x);
+    // st-hd-hud widescreen: 3D (BG0) keeps the full width, 2D is squeezed into the center 192px
+    // so it comes out 4:3 after the 16:9 stretch. Pairs with the clip squeeze in GPU3D.cpp.
+    // shortcut: always on; becomes a toggle with the 3D squeeze.
+    float x2d = (fTexcoord.x - 32.0) * (4.0 / 3.0);
+    bool in2d = (x2d >= 0.0) && (x2d < 256.0);
+    x2d = clamp(x2d, 0.0, 255.99);
+
+    ivec2 coord = ivec2(x2d * uScaleFactor, fTexcoord.w);
+    vec2 bgcoord = vec2(x2d, fract(fTexcoord.y));
+    vec2 coord3d = vec2(fTexcoord.x, fract(fTexcoord.y));
+    int xpos = int(x2d);
     int line = int(fTexcoord.y);
 
     if (uScanline[line].MosaicSize.x > 0)
@@ -257,21 +265,52 @@ vec4 CompositeLayers()
     bool specialcase = false;
 
     vec4 layercol[6];
-    layercol[0] = BG0CalcAndFetch(bgcoord, line);
+    // 3D and display captures (BG type >= 7) are already in widescreen space: no remap, no blanking
+    bool full[4] = bool[4](uEnable3D, false, uBGConfig[2].Type >= 7, uBGConfig[3].Type >= 7);
+
+    layercol[0] = BG0CalcAndFetch(full[0] ? coord3d : bgcoord, line);
     layercol[1] = BG1CalcAndFetch(bgcoord, line);
-    layercol[2] = BG2CalcAndFetch(bgcoord, line);
-    layercol[3] = BG3CalcAndFetch(bgcoord, line);
+    layercol[2] = BG2CalcAndFetch(full[2] ? coord3d : bgcoord, line);
+    layercol[3] = BG3CalcAndFetch(full[3] ? coord3d : bgcoord, line);
 
     ivec4 objflags;
+    bool objcap = false;
     if (uScanline[line].MosaicSize.z > 0)
     {
-        CalcSpriteMosaic(ivec2(fTexcoord.xy), objflags, layercol[4]);
+        CalcSpriteMosaic(ivec2(x2d, fTexcoord.y), objflags, layercol[4]);
     }
     else
     {
-        layercol[4] = texelFetch(OBJLayerTex, ivec3(coord, 0), 0);
-        layercol[5] = texelFetch(OBJLayerTex, ivec3(coord, 1), 0);
-        objflags = ivec4(layercol[5] * 255.0);
+        // capture sprites (flags.g == 2) hold widescreen-space pixels: fetch them unremapped
+        ivec2 coordfull = ivec2(fTexcoord.zw);
+        layercol[4] = texelFetch(OBJLayerTex, ivec3(coordfull, 0), 0);
+        layercol[5] = texelFetch(OBJLayerTex, ivec3(coordfull, 1), 0);
+        objflags = ivec4(round(layercol[5] * 255.0));
+        objcap = (layercol[4].a > 0) && (objflags.g == 2);
+
+        if (!objcap)
+        {
+            layercol[4] = texelFetch(OBJLayerTex, ivec3(coord, 0), 0);
+            layercol[5] = texelFetch(OBJLayerTex, ivec3(coord, 1), 0);
+            objflags = ivec4(round(layercol[5] * 255.0));
+            if (objflags.g == 2)
+            {
+                layercol[4] = vec4(0);
+                objflags = ivec4(0);
+            }
+        }
+    }
+
+    // outside the center band only 3D and captures show
+    if (!in2d)
+    {
+        for (int i = 0; i < 4; i++)
+            if (!full[i]) layercol[i] = vec4(0);
+        if (!objcap)
+        {
+            layercol[4] = vec4(0);
+            objflags = ivec4(0);
+        }
     }
 
     int winmask = uScanline[line].WinMask;
