@@ -462,7 +462,9 @@ void EmuInstance::inputProcess()
 
 void EmuInstance::touchScreen(int x, int y)
 {
-    touchX = x;
+    // st-hd-hud widescreen: undo the 2D squeeze (2DCompositorFS.glsl) so taps land where they're drawn.
+    // shortcut: always on, like the squeeze; edge strips clamp to the screen edge.
+    touchX = std::clamp((x - 32) * 4 / 3, 0, 255);
     touchY = y;
     isTouching = true;
 }
